@@ -14,6 +14,7 @@ import MedicationRecords from './pages/MedicationRecords';
 import CostRecords from './pages/CostRecords';
 import HarvestSales from './pages/HarvestSales';
 import Analysis from './pages/Analysis';
+import TracePage from './pages/TracePage';
 
 const Sidebar: React.FC = () => {
   const location = useLocation();
@@ -95,6 +96,7 @@ const App: React.FC = () => {
             <Route path="/costs" element={<CostRecords />} />
             <Route path="/harvest" element={<HarvestSales />} />
             <Route path="/analysis" element={<Analysis />} />
+            <Route path="/trace" element={<TracePage />} />
           </Routes>
         </main>
       </div>

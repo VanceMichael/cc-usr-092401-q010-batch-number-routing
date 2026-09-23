@@ -38,6 +38,26 @@ class Batch(Base):
     medication_records = relationship("MedicationRecord", back_populates="batch")
     cost_records = relationship("CostRecord", back_populates="batch")
     harvest_sales = relationship("HarvestSale", back_populates="batch")
+    number_aliases = relationship(
+        "BatchNumberAlias", back_populates="batch", cascade="all, delete-orphan"
+    )
+
+class BatchNumberAlias(Base):
+    """批次号别名：改号后，已发出的旧链接仍能定位批次。
+
+    - alias 存的是旧批次号的规范形态（NFKC + strip + upper），主键即唯一约束，
+      两个不同批次绝不可能占用同一规范号。
+    - 别名只指向当前批次号，绝不指向另一个别名，因此解析永远单跳、无环。
+    - 批次删除时随 ORM 级联清理。
+    """
+    __tablename__ = "batch_number_aliases"
+
+    alias = Column(String(50), primary_key=True)
+    batch_id = Column(Integer, ForeignKey("batches.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    batch = relationship("Batch", back_populates="number_aliases")
+
 
 class StockingRecord(Base):
     __tablename__ = "stocking_records"

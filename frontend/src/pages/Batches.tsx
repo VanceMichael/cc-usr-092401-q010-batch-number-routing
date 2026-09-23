@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Edit2, Trash2, X, Fish, Eye } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Edit2, Trash2, X, Fish, Eye, Link2 } from 'lucide-react';
 import { batchApi, pondApi } from '../services/api';
 import type { Batch, Pond } from '../types';
+import { buildBatchTracePath } from '../utils/batchLink';
 
 const Batches: React.FC = () => {
+  const navigate = useNavigate();
   const [batches, setBatches] = useState<Batch[]>([]);
   const [ponds, setPonds] = useState<Pond[]>([]);
   const [loading, setLoading] = useState(true);
@@ -202,8 +205,7 @@ const Batches: React.FC = () => {
                 <th>放苗日期</th>
                 <th>预计收获</th>
                 <th>状态</th>
-                <th>操作</th>
-              </tr>
+                <th>操作</th>              </tr>
             </thead>
             <tbody>
               {batches.map((batch) => (
@@ -216,6 +218,13 @@ const Batches: React.FC = () => {
                   <td>{getStatusBadge(batch.status)}</td>
                   <td>
                     <div className="flex items-center space-x-2">
+                      <button
+                        title="打开规范追溯链接"
+                        onClick={() => navigate(buildBatchTracePath(batch.batch_number))}
+                        className="p-2 text-ocean-600 hover:bg-ocean-50 rounded-lg transition-colors"
+                      >
+                        <Link2 size={18} />
+                      </button>
                       <button
                         onClick={() => handleEdit(batch)}
                         className="p-2 text-ocean-600 hover:bg-ocean-50 rounded-lg transition-colors"

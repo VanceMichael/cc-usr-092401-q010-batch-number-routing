@@ -1,16 +1,59 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import List, Optional
-from datetime import date
 from ..database import get_db
 from ..models import Batch, Pond, StockingRecord, FeedingRecord, CostRecord, HarvestSale, WaterQualityRecord, MedicationRecord
 from ..schemas import CultureCycleAnalysis, BatchTraceability, BatchInfo, PondInfo
+from ..batch_numbers import BatchNumberNotFoundError, InvalidBatchNumberError, canonical_url, has_variation, normalize_batch_number
+from ..batch_service import resolve_batch_by_number
 
 router = APIRouter(
     prefix="/api/analysis",
     tags=["养殖周期分析"]
 )
+
+# 按批次号追溯的唯一规范地址（query 参数），与按数字 ID 的
+# /traceability/{batch_id} 路径在词法上互不相交。
+TRACE_BY_NUMBER_CANONICAL_PATH = "/api/analysis/trace-by-number"
+
+
+# 批次号入口（静态前缀）必须先于任何 {batch_id} 动态路由注册，
+# 保证 ID 入口与批次号入口互不遮蔽（见回归测试 RouteOrderTest）。
+@router.get("/trace-by-number", response_model=BatchTraceability)
+def trace_by_batch_number(request: Request, batch_number: str | None = None, db: Session = Depends(get_db)):
+    """按批次号追溯的唯一规范入口（query 参数）。
+
+    - 200：规范形态命中当前批次号。
+    - 301：输入有规范化差异或命中旧别名，跳到当前规范号地址并保留查询参数。
+    - 400/404：格式非法 / 号不存在，错误语义与 /api/batches/by-number 一致。
+    """
+    if batch_number is None:
+        raise InvalidBatchNumberError("缺少 batch_number 查询参数")
+    canonical = normalize_batch_number(batch_number)  # 400
+    resolved = resolve_batch_by_number(db, batch_number)  # 404
+    if has_variation(batch_number) or resolved.via_alias or resolved.canonical_number != canonical:
+        query = {k: v for k, v in request.query_params.items() if k != "batch_number"}
+        return RedirectResponse(
+            canonical_url(TRACE_BY_NUMBER_CANONICAL_PATH, resolved.canonical_number, query),
+            status_code=301,
+        )
+    return batch_traceability(resolved.batch.id, db)
+
+@router.get("/trace-by-number/{batch_number}/", include_in_schema=False)
+def legacy_trace_by_batch_number(request: Request, batch_number: str, db: Session = Depends(get_db)):
+    """旧追溯链接兼容：301 迁移到规范 query 地址并保留查询参数。"""
+    canonical = normalize_batch_number(batch_number)  # 400
+    target_number = canonical
+    try:
+        target_number = resolve_batch_by_number(db, canonical).canonical_number
+    except BatchNumberNotFoundError:
+        pass  # 不存在也先迁移地址形状，404 由规范入口给出
+    query = {k: v for k, v in request.query_params.items() if k != "batch_number"}
+    return RedirectResponse(
+        canonical_url(TRACE_BY_NUMBER_CANONICAL_PATH, target_number, query),
+        status_code=301,
+    )
 
 @router.get("/cycle/{batch_id}/", response_model=CultureCycleAnalysis)
 def analyze_cycle(batch_id: int, db: Session = Depends(get_db)):
@@ -223,10 +266,3 @@ def batch_traceability(batch_id: int, db: Session = Depends(get_db)):
             } for r in harvest_sales
         ]
     )
-
-@router.get("/trace-by-number/{batch_number}/", response_model=BatchTraceability)
-def trace_by_batch_number(batch_number: str, db: Session = Depends(get_db)):
-    batch = db.query(Batch).filter(Batch.batch_number == batch_number).first()
-    if not batch:
-        raise HTTPException(status_code=404, detail=f"批次号 {batch_number} 不存在")
-    return batch_traceability(batch.id, db)

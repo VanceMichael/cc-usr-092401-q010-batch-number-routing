@@ -14,6 +14,14 @@ const api = axios.create({
   },
 });
 
+// 批次号只走 query，且固定 RFC3986 百分号编码（空格为 %20 而非 '+'），
+// 与后端规范地址的编码规则保持唯一一致。
+const batchNumberParams = (batchNumber: string) => ({
+  params: { batch_number: batchNumber },
+  paramsSerializer: (p: { batch_number: string }) =>
+    `batch_number=${encodeURIComponent(p.batch_number)}`,
+});
+
 export const pondApi = {
   getAll: () => api.get<Pond[]>('/ponds/'),
   getById: (id: number) => api.get<Pond>(`/ponds/${id}/`),
@@ -27,8 +35,8 @@ export const pondApi = {
 export const batchApi = {
   getAll: () => api.get<Batch[]>('/batches/'),
   getById: (id: number) => api.get<Batch>(`/batches/${id}/`),
-  getByNumber: (batchNumber: string) => 
-    api.get<Batch>(`/batches/by-number/${batchNumber}/`),
+  getByNumber: (batchNumber: string) =>
+    api.get<Batch>('/batches/by-number', batchNumberParams(batchNumber)),
   create: (data: Omit<Batch, 'id' | 'created_at' | 'updated_at'>) => 
     api.post<Batch>('/batches/', data),
   update: (id: number, data: Partial<Batch>) => 
@@ -119,8 +127,8 @@ export const analysisApi = {
     api.get<CultureCycleAnalysis>(`/analysis/cycle/${batchId}/`),
   batchTraceability: (batchId: number) => 
     api.get<BatchTraceability>(`/analysis/traceability/${batchId}/`),
-  traceByBatchNumber: (batchNumber: string) => 
-    api.get<BatchTraceability>(`/analysis/trace-by-number/${batchNumber}/`),
+  traceByBatchNumber: (batchNumber: string) =>
+    api.get<BatchTraceability>('/analysis/trace-by-number', batchNumberParams(batchNumber)),
 };
 
 export default api;

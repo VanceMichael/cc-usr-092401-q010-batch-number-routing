@@ -14,6 +14,7 @@ import MedicationRecords from './pages/MedicationRecords';
 import CostRecords from './pages/CostRecords';
 import HarvestSales from './pages/HarvestSales';
 import Analysis from './pages/Analysis';
+import Trace from './pages/Trace';
 
 const Sidebar: React.FC = () => {
   const location = useLocation();
@@ -95,6 +96,9 @@ const App: React.FC = () => {
             <Route path="/costs" element={<CostRecords />} />
             <Route path="/harvest" element={<HarvestSales />} />
             <Route path="/analysis" element={<Analysis />} />
+            <Route path="/trace" element={<Trace />} />
+            {/* 旧式路径链接 /trace/<批次号> 由 Trace 页归一化跳转到 /trace?n= */}
+            <Route path="/trace/*" element={<Trace />} />
           </Routes>
         </main>
       </div>

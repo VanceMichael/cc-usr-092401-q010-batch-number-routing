@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Edit2, Trash2, X, Fish, Eye } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Plus, Edit2, Trash2, X, Fish, Eye, QrCode } from 'lucide-react';
 import { batchApi, pondApi } from '../services/api';
 import type { Batch, Pond } from '../types';
+import { tracePath } from '../utils/batchNumber';
 
 const Batches: React.FC = () => {
   const [batches, setBatches] = useState<Batch[]>([]);
@@ -216,6 +218,13 @@ const Batches: React.FC = () => {
                   <td>{getStatusBadge(batch.status)}</td>
                   <td>
                     <div className="flex items-center space-x-2">
+                      <Link
+                        to={tracePath(batch.batch_number)}
+                        title="打开追溯规范链接（可复制分享）"
+                        className="p-2 text-ocean-600 hover:bg-ocean-50 rounded-lg transition-colors"
+                      >
+                        <QrCode size={18} />
+                      </Link>
                       <button
                         onClick={() => handleEdit(batch)}
                         className="p-2 text-ocean-600 hover:bg-ocean-50 rounded-lg transition-colors"

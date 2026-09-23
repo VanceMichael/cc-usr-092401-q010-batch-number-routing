@@ -4,6 +4,7 @@ import type {
   MedicationRecord, CostRecord, HarvestSale, CultureCycleAnalysis,
   CostSummary, FeedingSummary, BatchTraceability
 } from '../types';
+import { strictParamsSerializer } from '../utils/batchNumber';
 
 const API_BASE_URL = '/api';
 
@@ -27,11 +28,15 @@ export const pondApi = {
 export const batchApi = {
   getAll: () => api.get<Batch[]>('/batches/'),
   getById: (id: number) => api.get<Batch>(`/batches/${id}/`),
-  getByNumber: (batchNumber: string) => 
-    api.get<Batch>(`/batches/by-number/${batchNumber}/`),
-  create: (data: Omit<Batch, 'id' | 'created_at' | 'updated_at'>) => 
+  // 批次号入口固定为查询参数形态：斜杠/空格/中文均安全，编码规则全端唯一
+  getByNumber: (batchNumber: string) =>
+    api.get<Batch>('/batches/by-number', {
+      params: { n: batchNumber },
+      paramsSerializer: strictParamsSerializer,
+    }),
+  create: (data: Omit<Batch, 'id' | 'created_at' | 'updated_at'>) =>
     api.post<Batch>('/batches/', data),
-  update: (id: number, data: Partial<Batch>) => 
+  update: (id: number, data: Partial<Batch>) =>
     api.put<Batch>(`/batches/${id}/`, data),
   delete: (id: number) => api.delete(`/batches/${id}/`),
 };
@@ -119,8 +124,11 @@ export const analysisApi = {
     api.get<CultureCycleAnalysis>(`/analysis/cycle/${batchId}/`),
   batchTraceability: (batchId: number) => 
     api.get<BatchTraceability>(`/analysis/traceability/${batchId}/`),
-  traceByBatchNumber: (batchNumber: string) => 
-    api.get<BatchTraceability>(`/analysis/trace-by-number/${batchNumber}/`),
+  traceByBatchNumber: (batchNumber: string) =>
+    api.get<BatchTraceability>('/analysis/trace-by-number', {
+      params: { n: batchNumber },
+      paramsSerializer: strictParamsSerializer,
+    }),
 };
 
 export default api;

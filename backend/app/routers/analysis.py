@@ -1,18 +1,84 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import List, Optional
 from datetime import date
+from urllib.parse import quote, urlencode
 from ..database import get_db
 from ..models import Batch, Pond, StockingRecord, FeedingRecord, CostRecord, HarvestSale, WaterQualityRecord, MedicationRecord
 from ..schemas import CultureCycleAnalysis, BatchTraceability, BatchInfo, PondInfo
+from ..services import batch_numbers as bn
 
 router = APIRouter(
     prefix="/api/analysis",
     tags=["养殖周期分析"]
 )
 
-@router.get("/cycle/{batch_id}/", response_model=CultureCycleAnalysis)
+TRACE_BY_NUMBER_PATH = "/api/analysis/trace-by-number"
+
+
+def _other_query(request: Request) -> list:
+    return [(k, v) for k, v in request.query_params.multi_items() if k != "n"]
+
+
+def _strict_quote(value, safe="/", encoding="utf-8", errors=None):
+    # 与 batches 路由相同："/"→%2F、空格→%20，编码唯一
+    return quote(str(value), safe="", encoding=encoding, errors=errors or "strict")
+
+
+def _query_encode(params: list) -> str:
+    return urlencode(params, doseq=True, quote_via=_strict_quote)
+
+
+def _trace_location(raw_n: str, other: list) -> str:
+    params = list(other)
+    try:
+        value = bn.normalize_batch_number(raw_n)
+    except bn.BatchNumberError:
+        value = raw_n
+    params.append(("n", value))
+    return f"{TRACE_BY_NUMBER_PATH}?{_query_encode(params)}"
+
+
+# 字面静态路由先声明（路由顺序契约）
+@router.get("/trace-by-number", response_model=BatchTraceability, summary="按批次号追溯(规范入口)")
+def trace_by_batch_number(request: Request, n: str, db: Session = Depends(get_db)):
+    """规范入口：GET /api/analysis/trace-by-number?n=批次号
+
+    非规范输入或历史别名 301 到规范地址；不存在 404 / 格式非法 422 / 冲突 409。
+    """
+    other = _other_query(request)
+    try:
+        canonical_form = bn.normalize_batch_number(n)
+    except bn.BatchNumberError as exc:
+        raise HTTPException(status_code=422, detail=f"批次号格式非法: {exc}")
+
+    if canonical_form != n:
+        return RedirectResponse(_trace_location(n, other), status_code=301)
+
+    result = bn.resolve(db, n)
+    if result.status == bn.FOUND:
+        if result.is_alias or result.canonical != n:
+            return RedirectResponse(_trace_location(result.canonical, other), status_code=301)
+        return _build_traceability(db, result.batch)
+    if result.status == bn.CONFLICT:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"批次号规范化冲突: '{n}' 不存在，但大小写不同的"
+                f"'{result.matched}' 已存在；批次号大小写敏感且不得混用"
+            ),
+        )
+    raise HTTPException(status_code=404, detail=f"批次号 '{canonical_form}' 不存在")
+
+
+@router.get("/trace-by-number/{legacy:path}", include_in_schema=False)
+def legacy_trace_by_batch_number(legacy: str, request: Request):
+    """旧链接兼容：/trace-by-number/{batch_number}/ 永久跳转并保留查询参数。"""
+    raw_n = legacy.rstrip("/")
+    return RedirectResponse(_trace_location(raw_n, _other_query(request)), status_code=301)
+
+@router.get("/cycle/{batch_id:int}/", response_model=CultureCycleAnalysis)
 def analyze_cycle(batch_id: int, db: Session = Depends(get_db)):
     batch = db.query(Batch).filter(Batch.id == batch_id).first()
     if not batch:
@@ -126,12 +192,15 @@ def analyze_cycle(batch_id: int, db: Session = Depends(get_db)):
         feeding_summary=feeding_summary_result
     )
 
-@router.get("/traceability/{batch_id}/", response_model=BatchTraceability)
+@router.get("/traceability/{batch_id:int}/", response_model=BatchTraceability)
 def batch_traceability(batch_id: int, db: Session = Depends(get_db)):
     batch = db.query(Batch).filter(Batch.id == batch_id).first()
     if not batch:
         raise HTTPException(status_code=404, detail="批次不存在")
-    
+    return _build_traceability(db, batch)
+
+
+def _build_traceability(db: Session, batch: Batch) -> BatchTraceability:
     pond = db.query(Pond).filter(Pond.id == batch.pond_id).first()
     
     stocking_records = db.query(StockingRecord).filter(
@@ -223,10 +292,3 @@ def batch_traceability(batch_id: int, db: Session = Depends(get_db)):
             } for r in harvest_sales
         ]
     )
-
-@router.get("/trace-by-number/{batch_number}/", response_model=BatchTraceability)
-def trace_by_batch_number(batch_number: str, db: Session = Depends(get_db)):
-    batch = db.query(Batch).filter(Batch.batch_number == batch_number).first()
-    if not batch:
-        raise HTTPException(status_code=404, detail=f"批次号 {batch_number} 不存在")
-    return batch_traceability(batch.id, db)

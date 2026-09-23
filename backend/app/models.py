@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Date, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Float, Date, DateTime, ForeignKey, Text, Index, text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
@@ -38,6 +38,28 @@ class Batch(Base):
     medication_records = relationship("MedicationRecord", back_populates="batch")
     cost_records = relationship("CostRecord", back_populates="batch")
     harvest_sales = relationship("HarvestSale", back_populates="batch")
+
+class BatchName(Base):
+    """批次名称的持久化命名空间：当前号(kind='current')与历史别名(kind='alias')
+    共用同一张表、同一个名称唯一约束，因此当前号与任何别名都不可能指向两个批次，
+    从结构上杜绝一号多批与别名循环。"""
+    __tablename__ = "batch_names"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(50), nullable=False, comment="NFC规范化、大小写敏感的批次号")
+    kind = Column(String(10), nullable=False, comment="current=当前号, alias=历史别名")
+    batch_id = Column(Integer, ForeignKey("batches.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        # 名称全局唯一且大小写敏感（SQLite 默认 BINARY 排序）：
+        # 当前号与历史别名共用同一命名空间，一个名称永远只能指向一个批次
+        Index("ux_batch_names_name", "name", unique=True),
+        Index("ix_batch_names_batch_kind", "batch_id", "kind"),
+    )
+
+    def __repr__(self):
+        return f"<BatchName {self.kind}:{self.name} -> batch {self.batch_id}>"
 
 class StockingRecord(Base):
     __tablename__ = "stocking_records"

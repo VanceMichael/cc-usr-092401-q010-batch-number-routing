@@ -19,3 +19,10 @@ logs/
 
 # Docker
 *.pid
+
+# Python
+__pycache__/
+*.pyc
+
+# Local SQLite databases
+*.db

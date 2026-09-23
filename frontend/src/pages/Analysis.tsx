@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { TrendingUp, Target, Users, Search, Loader2 } from 'lucide-react';
 import { analysisApi, batchApi, pondApi } from '../services/api';
 import type { CultureCycleAnalysis, Batch, Pond, BatchTraceability } from '../types';
+import { canonicalizeBatchNumber, BatchNumberFormatError, tracePath } from '../utils/batchNumber';
 
 const Analysis: React.FC = () => {
+  const navigate = useNavigate();
   const [batches, setBatches] = useState<Batch[]>([]);
   const [ponds, setPonds] = useState<Pond[]>([]);
   const [loading, setLoading] = useState(true);
@@ -13,8 +16,7 @@ const Analysis: React.FC = () => {
   const [analysisData, setAnalysisData] = useState<CultureCycleAnalysis | null>(null);
   const [traceabilityData, setTraceabilityData] = useState<BatchTraceability | null>(null);
   const [searchBatchNumber, setSearchBatchNumber] = useState('');
-  const [searchResult, setSearchResult] = useState<BatchTraceability | null>(null);
-  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = async () => {
@@ -67,22 +69,14 @@ const Analysis: React.FC = () => {
     }
   };
 
-  const handleSearchBatch = async (e: React.FormEvent) => {
+  const handleSearchBatch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!searchBatchNumber.trim()) return;
-    
-    setSearchLoading(true);
-    setError(null);
-    setSearchResult(null);
-    
+    setSearchError(null);
     try {
-      const response = await analysisApi.traceByBatchNumber(searchBatchNumber.trim());
-      setSearchResult(response.data);
+      // 统一站内规范跳转：分享链接、刷新、站内导航地址完全一致
+      navigate(tracePath(canonicalizeBatchNumber(searchBatchNumber)));
     } catch (err) {
-      setError('未找到该批次的追溯信息');
-      console.error('Error searching batch:', err);
-    } finally {
-      setSearchLoading(false);
+      setSearchError(err instanceof BatchNumberFormatError ? err.message : '批次号格式非法');
     }
   };
 
@@ -131,219 +125,19 @@ const Analysis: React.FC = () => {
           />
           <button
             type="submit"
-            disabled={searchLoading}
             className="btn-primary flex items-center justify-center space-x-2 min-w-[120px]"
           >
-            {searchLoading ? (
-              <Loader2 size={18} className="animate-spin" />
-            ) : (
-              <Search size={18} />
-            )}
-            <span>查询</span>
+            <Search size={18} />
+            <span>查询追溯</span>
           </button>
         </form>
+        <p className="mt-2 text-xs text-gray-500">
+          查询将打开统一规范的追溯地址（/trace?n=批次号），可直接复制分享给客服或客户。
+        </p>
 
-        {error && (
+        {searchError && (
           <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-lg">
-            {error}
-          </div>
-        )}
-
-        {searchResult && (
-          <div className="mt-6 p-4 bg-white rounded-lg border border-ocean-200">
-            <h3 className="font-semibold text-gray-900 mb-4">
-              批次追溯结果 - {searchResult.batch.batch_number}
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="p-3 bg-blue-50 rounded-lg">
-                <p className="text-sm text-blue-600">养殖品种</p>
-                <p className="font-semibold">{searchResult.batch.species}</p>
-              </div>
-              <div className="p-3 bg-green-50 rounded-lg">
-                <p className="text-sm text-green-600">塘口</p>
-                <p className="font-semibold">{getPondName(searchResult.batch.pond_id)}</p>
-              </div>
-              <div className="p-3 bg-purple-50 rounded-lg">
-                <p className="text-sm text-purple-600">状态</p>
-                <p className="font-semibold">{searchResult.batch.status}</p>
-              </div>
-            </div>
-
-            <div className="mt-6 space-y-4">
-              <div>
-                <h4 className="font-medium text-gray-700 mb-2">投苗记录 ({searchResult.stocking_records?.length || 0})</h4>
-                {searchResult.stocking_records && searchResult.stocking_records.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="table text-sm">
-                      <thead>
-                        <tr>
-                          <th>投苗日期</th>
-                          <th>数量</th>
-                          <th>来源</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {searchResult.stocking_records.map((record, idx) => (
-                          <tr key={idx}>
-                            <td>{record.stocking_date}</td>
-                            <td>{record.quantity} 尾</td>
-                            <td>{record.source || '-'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="text-gray-500 text-sm">暂无投苗记录</p>
-                )}
-              </div>
-
-              <div>
-                <h4 className="font-medium text-gray-700 mb-2">投喂记录 ({searchResult.feeding_records?.length || 0})</h4>
-                {searchResult.feeding_records && searchResult.feeding_records.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="table text-sm">
-                      <thead>
-                        <tr>
-                          <th>投喂日期</th>
-                          <th>饲料类型</th>
-                          <th>数量</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {searchResult.feeding_records.map((record, idx) => (
-                          <tr key={idx}>
-                            <td>{record.feeding_date}</td>
-                            <td>{record.feed_type}</td>
-                            <td>{record.quantity} {record.unit}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="text-gray-500 text-sm">暂无投喂记录</p>
-                )}
-              </div>
-
-              <div>
-                <h4 className="font-medium text-gray-700 mb-2">水质监测记录 ({searchResult.water_quality_records?.length || 0})</h4>
-                {searchResult.water_quality_records && searchResult.water_quality_records.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="table text-sm">
-                      <thead>
-                        <tr>
-                          <th>监测日期</th>
-                          <th>水温</th>
-                          <th>PH值</th>
-                          <th>溶氧</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {searchResult.water_quality_records.map((record, idx) => (
-                          <tr key={idx}>
-                            <td>{record.record_date}</td>
-                            <td>{record.water_temperature}°C</td>
-                            <td>{record.ph_value}</td>
-                            <td>{record.dissolved_oxygen} mg/L</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="text-gray-500 text-sm">暂无水质监测记录</p>
-                )}
-              </div>
-
-              <div>
-                <h4 className="font-medium text-gray-700 mb-2">用药记录 ({searchResult.medication_records?.length || 0})</h4>
-                {searchResult.medication_records && searchResult.medication_records.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="table text-sm">
-                      <thead>
-                        <tr>
-                          <th>用药日期</th>
-                          <th>药品名称</th>
-                          <th>用量</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {searchResult.medication_records.map((record, idx) => (
-                          <tr key={idx}>
-                            <td>{record.medication_date}</td>
-                            <td>{record.medication_name}</td>
-                            <td>{record.dosage} {record.unit}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="text-gray-500 text-sm">暂无用药记录</p>
-                )}
-              </div>
-
-              <div>
-                <h4 className="font-medium text-gray-700 mb-2">成本记录 ({searchResult.cost_records?.length || 0})</h4>
-                {searchResult.cost_records && searchResult.cost_records.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="table text-sm">
-                      <thead>
-                        <tr>
-                          <th>日期</th>
-                          <th>费用类型</th>
-                          <th>金额</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {searchResult.cost_records.map((record, idx) => (
-                          <tr key={idx}>
-                            <td>{record.cost_date}</td>
-                            <td>{record.cost_type}</td>
-                            <td className="text-red-600">¥{record.amount}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="text-gray-500 text-sm">暂无成本记录</p>
-                )}
-              </div>
-
-              <div>
-                <h4 className="font-medium text-gray-700 mb-2">销售记录 ({searchResult.harvest_sales?.length || 0})</h4>
-                {searchResult.harvest_sales && searchResult.harvest_sales.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="table text-sm">
-                      <thead>
-                        <tr>
-                          <th>销售日期</th>
-                          <th>重量</th>
-                          <th>单价</th>
-                          <th>总金额</th>
-                          <th>买家</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {searchResult.harvest_sales.map((record, idx) => (
-                          <tr key={idx}>
-                            <td>{record.sale_date}</td>
-                            <td>{record.weight} 公斤</td>
-                            <td>¥{record.unit_price}/公斤</td>
-                            <td className="text-green-600 font-medium">¥{record.total_amount}</td>
-                            <td>{record.buyer || '-'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="text-gray-500 text-sm">暂无销售记录</p>
-                )}
-              </div>
-            </div>
+            {searchError}
           </div>
         )}
       </div>
